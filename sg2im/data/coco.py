@@ -251,7 +251,7 @@ class CocoSceneGraphDataset(Dataset):
     for idx, name in enumerate(self.vocab['pred_idx_to_name']):
       self.vocab['pred_name_to_idx'][name] = idx
 
-  # 将图像大小变换为60*60(image_size)，并转换为tensor形式
+  # 将图像大小变换为64*64(image_size)，并转换为tensor形式
   def set_image_size(self, image_size):
     print('called set_image_size', image_size)
     transform = [Resize(image_size), T.ToTensor()]
@@ -306,7 +306,9 @@ class CocoSceneGraphDataset(Dataset):
     image_path = os.path.join(self.image_dir, filename)
     with open(image_path, 'rb') as f:
       with PIL.Image.open(f) as image:
+        # 480
         WW, HH = image.size
+        # transform中包括Resize和toTensor，将原始图像大小变为64，64
         image = self.transform(image.convert('RGB'))
 
     H, W = self.image_size
@@ -479,7 +481,7 @@ class CocoSceneGraphDataset(Dataset):
     # 关系名称为0，每个对象被整个图像完全包围
     # [0, 0, 6], [1, 0, 6], [2, 0, 6], [3, 0, 6], [4, 0, 6], [5, 0, 6]]
     triples = torch.LongTensor(triples)
-    # print("image:",image)
+    print("image.size:",image.size)
     return image, objs, boxes, masks, triples
 
 # seg是分割信息，可以是多种格式，包括Python列表或COCO数据集中的分割信息对象。

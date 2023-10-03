@@ -27,6 +27,8 @@ import torch
 import torch.optim as optim
 import torch.nn as nn
 import torch.nn.functional as F
+import torchvision.utils
+from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader
 
 from sg2im.data import imagenet_deprocess_batch
@@ -467,11 +469,15 @@ def main(args):
   # 创建loaders
   vocab, train_loader, val_loader = build_loaders(args)
   # print("vocab：",vocab)
+  # vocab由以下四个字典组成：object_name_to_idx、pred_name_to_idx、object_idx_to_name、pred_idx_to_name
   # print("train_loader:")
   # print("val_loader:",val_loader)
   # 创建模型
   model, model_kwargs = build_model(args, vocab)
   model.type(float_dtype)
+  # modal_kwargs:'image_size': (64, 64), 'embedding_dim': 128, 'gconv_dim': 128, 'gconv_hidden_dim': 512,
+  # 'gconv_num_layers': 5, 'mlp_normalization': 'none', 'refinement_dims': (1024, 512, 256, 128, 64),
+  # 'normalization': 'batch', 'activation': 'leakyrelu-0.2', 'mask_size': 16, 'layout_noise_dim': 32
   # print(model)
 
   # 创建优化器
@@ -578,6 +584,7 @@ def main(args):
       # t表示iters
       t += 1
       batch = [tensor.cuda() for tensor in batch]
+      # 每个batch
       masks = None
       # batch doesn't contain segmentation mask
       if len(batch) == 6:
@@ -588,9 +595,23 @@ def main(args):
         imgs, objs, boxes, triples, obj_to_img, triple_to_img = batch
       # batch contains segmentation mask
       elif len(batch) == 7:
+        # triples形如：tensor([  0,   5,   5],...
+
+
         imgs, objs, boxes, masks, triples, obj_to_img, triple_to_img = batch
       else:
         assert False
+
+      # lsc add 可以正常在matplotlib显示
+      # img = torchvision.utils.make_grid(imgs)
+      # img = img.to('cpu').numpy().transpose(1,2,0)
+      # std = [0.5,0.5,0.5]
+      # mean = [0.5,0.5,0.5]
+      # img = img*mean+std
+      # plt.imshow(img)
+      from torchvision.utils import save_image
+      save_image(imgs.data, 'imgs.png')
+
       predicates = triples[:, 1]
 
       # 记录前向传播的时间，并进行模型预测。

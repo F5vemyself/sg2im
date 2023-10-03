@@ -142,6 +142,8 @@ class Sg2ImModel(nn.Module):
     if cur_size != mask_size:
       raise ValueError('Mask size must be a power of 2')
     layers.append(nn.Conv2d(dim, output_dim, kernel_size=1))
+    # lsc add
+    self.conv_layer = nn.Conv2d(128, 3, kernel_size=1)
     return nn.Sequential(*layers)
 
   def forward(self, objs, triples, obj_to_img=None,
@@ -169,6 +171,7 @@ class Sg2ImModel(nn.Module):
     #print(s,p,o)    # s对应[[0],[2],[0]],p对应[[1],[1],[3]]
     # 对分块后的张量进行循环，使用squeeze(1)操作将形状为(T, 1)的张量转换为形状为(T,)的张量。
     # 现在，s，p，o都具有形状(T,)。
+    # s,p,o的size均为（T，1）
     s, p, o = [x.squeeze(1) for x in [s, p, o]] # Now have shape (T,)
     #print(s,p,o)    # s对应[0,2,0],p对应[1,1,3]
     # subject和object按维度1堆叠，返回一个形状为(T, 2)的张量。这里的edges表示三元组中的边（subject，object）。
@@ -183,10 +186,10 @@ class Sg2ImModel(nn.Module):
       # obj_to_img将用于将对象映射到图像中
       obj_to_img = torch.zeros(O, dtype=objs.dtype, device=objs.device)
 
-    # 对象向量
+    # 对象向量,size(O,128)
     obj_vecs = self.obj_embeddings(objs)
     obj_vecs_orig = obj_vecs
-    # 谓词向量
+    # 谓词向量,size(T,128)
     pred_vecs = self.pred_embeddings(p)
 
     # 将对象向量、谓词向量通过图卷积提取特征。
@@ -194,7 +197,7 @@ class Sg2ImModel(nn.Module):
     if isinstance(self.gconv, nn.Linear):
       obj_vecs = self.gconv(obj_vecs)
     else:
-    # 相当于过一层图卷积
+    # 相当于过一层图卷积，size没变
       # 此处的obj_vecs,pred_vecs,edges对应gconv的forward方法里的参数
       obj_vecs, pred_vecs = self.gconv(obj_vecs, pred_vecs, edges)
     # 相当于再经过几层图卷积
@@ -222,6 +225,7 @@ class Sg2ImModel(nn.Module):
 
     # 辅助网络，识别谓词关系，[谓词个数，4]
     # 前面有boxes_pred = self.box_net(obj_vecs)
+    # ？？？？为什么左边是(谓词,4),右边是（对象，4）啊啊啊啊？？？？
     s_boxes, o_boxes = boxes_pred[s], boxes_pred[o]
     # print("s_boxes.shape:", s_boxes.shape)
     # print("o_boxes.shape:", o_boxes.shape)
@@ -236,6 +240,7 @@ class Sg2ImModel(nn.Module):
     # 这个分数什么作用？
     # print("rel_aux_input.shape:", rel_aux_input.shape)
     # rel_aux_input.shape: torch.Size([354, 264])
+    # rel_scores(354,7)
     rel_scores = self.rel_aux_net(rel_aux_input)
 
     # 这段代码的主要目的似乎是根据不同的条件（是否存在掩码数据）来处理图像中的对象，
@@ -244,11 +249,8 @@ class Sg2ImModel(nn.Module):
     print("H,W:",H,W)
     # H,W: 64 64
 
-
+    # torch.Size([对象数, 4])
     layout_boxes = boxes_pred if boxes_gt is None else boxes_gt
-    # lsc add
-    # print("layout_boxes.shape",layout_boxes.shape)
-    # layout_boxes.shape torch.Size([204, 4])
 
     if masks_pred is None:
       # obj_to_img[o] 表示第o个对象所属的图像索引，取值范围在 [0, N)，其中 N 是图像的数量。
@@ -257,7 +259,9 @@ class Sg2ImModel(nn.Module):
       # lsc add
       # print("layout_without_masks_pres:",layout.shape)
     else:
+      # （对象数，16，16）
       layout_masks = masks_pred if masks_gt is None else masks_gt
+      # （32，128，64，64）
       layout = masks_to_layout(obj_vecs, layout_boxes, layout_masks,
                                obj_to_img, H, W)
 
@@ -279,8 +283,11 @@ class Sg2ImModel(nn.Module):
 
       # lsc add
       from torchvision.utils import save_image
-      save_image(layout.data, 'layout_masks.png')
-      print("layout_with_maskes_pres:", layout.shape)
+      layout_process = layout
+      # conv_layer = nn.Conv2d(128, 3, kernel_size=1)
+      layout_tensor = self.conv_layer(layout_process)
+      save_image(layout_tensor.data, 'layout_masks.png')
+      print("layout_with_maskes_pres:", layout_tensor.shape)
       # layout_with_maskes_pres: torch.Size([32, 128, 64, 64])
 
     if self.layout_noise_dim > 0:

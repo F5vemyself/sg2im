@@ -100,20 +100,45 @@ class GraphTripleConv(nn.Module):
     new_s_vecs = new_t_vecs[:, :H]
     new_p_vecs = new_t_vecs[:, H:(H+Dout)]
     new_o_vecs = new_t_vecs[:, (H+Dout):(2 * H + Dout)]
- 
+
+
     # Allocate space for pooled object vectors of shape (O, H)
     pooled_obj_vecs = torch.zeros(O, H, dtype=dtype, device=device)
 
     # Use scatter_add to sum vectors for objects that appear in multiple triples;
     # we first need to expand the indices to have shape (T, D)
+    # .view(1, -1)：这种形式的 .view() 操作将张量重新塑造为一个行数为 1，列数自动推断的二维张量。
+    # .view(-1, 1)：这种形式的 .view() 操作将张量重新塑造为一个列数为 1，行数自动推断的二维张量。
+    # expand()函数括号中的输入参数为指定经过维度尺寸扩展后的张量的size。
+    # expand（）函数只能将size=1的维度扩展到更大的尺寸，如果扩展其他size（）的维度会报错。
+    # a = torch.tensor([1, 2, 3])
+    # c = a.expand(2, 3)
+    # # 输出信息：
+    # tensor([1, 2, 3])
+    # tensor([[1, 2, 3],
+    #         [1, 2, 3]]
+    # expand_as（）函数与expand（）函数类似，功能都是用来扩展张量中某维数据的尺寸，
+    # 区别是它括号内的输入参数是另一个张量，作用是将输入tensor的维度扩展为与指定tensor相同的size。
+
+    # 对出现在多个三元组中的对象向量进行求和操作。
     s_idx_exp = s_idx.view(-1, 1).expand_as(new_s_vecs)
     o_idx_exp = o_idx.view(-1, 1).expand_as(new_o_vecs)
+    # scatter_add（dim,index,src），dim即维度，是对于self而言的，即在self的哪一dim进行操作
+    # index是索引，即要在self的哪一index进行操作,src是待操作的源数字，比较好理解
+    # index的维度等于src的维度，相当于将src的每一个数字都加到self的对应index上；
+
+    # 使用 scatter_add 函数将 new_s_vecs（主语对象向量）和 new_o_vecs（宾语对象向量）按照索引
+    # s_idx_exp 和 o_idx_exp 散布到 pooled_obj_vecs 上，并执行累加操作。
+    # 这个操作的目的是将每个对象向量累加（汇总）到 pooled_obj_vecs 中，以便后续计算。
+    # 这样，如果一个对象在多个三元组中出现，它的向量将根据不同的三元组被累加到 pooled_obj_vecs 中，
+    # 以捕获其在不同上下文中的信息。
     pooled_obj_vecs = pooled_obj_vecs.scatter_add(0, s_idx_exp, new_s_vecs)
     pooled_obj_vecs = pooled_obj_vecs.scatter_add(0, o_idx_exp, new_o_vecs)
 
     if self.pooling == 'avg':
       # Figure out how many times each object has appeared, again using
       # some scatter_add trickery.
+      # obj_counts计算每个对象在三元组中出现的次数
       obj_counts = torch.zeros(O, dtype=dtype, device=device)
       ones = torch.ones(T, dtype=dtype, device=device)
       obj_counts = obj_counts.scatter_add(0, s_idx, ones)
@@ -123,6 +148,7 @@ class GraphTripleConv(nn.Module):
       # appeared, but first clamp at 1 to avoid dividing by zero;
       # objects that appear in no triples will have output vector 0
       # so this will not affect them.
+      # 将新的对象向量除以它们在三元组中出现的次数
       obj_counts = obj_counts.clamp(min=1)
       pooled_obj_vecs = pooled_obj_vecs / obj_counts.view(-1, 1)
 
